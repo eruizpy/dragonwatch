@@ -14,11 +14,17 @@ float wrap01(float value) {
 
 void drawKnife(dragonwatch::platform::IDisplayAdapter& display, int x, int y, const char* tag) {
   // Bigger blade + handle to make attack clearly visible.
-  display.fillRect(x, y - 3, 20, 6, 0xC638);
-  display.fillRect(x + 20, y - 4, 5, 8, 0xA145);
-  display.fillRect(x - 5, y - 2, 5, 4, 0xFFFF);
-  display.fillRect(x - 8, y - 1, 3, 2, 0xFFFF);
-  display.drawString(tag, x + 28, y - 5, 1);
+  (void)tag;
+  display.fillRect(x, y - 2, 16, 4, 0xC638);
+  display.fillRect(x + 16, y - 3, 4, 6, 0xA145);
+  display.fillRect(x - 4, y - 1, 4, 2, 0xFFFF);
+}
+
+void drawCutMark(dragonwatch::platform::IDisplayAdapter& display, int centerX, int centerY, uint32_t frame) {
+  const bool alt = (frame / 3) % 2 == 0;
+  const uint16_t c = alt ? 0xF800 : 0xFFE0;
+  display.fillRect(centerX + 7, centerY - 8, 2, 8, c);
+  display.fillRect(centerX + 9, centerY - 10, 2, 8, c);
 }
 
 }  // namespace
@@ -67,50 +73,78 @@ uint16_t ScreenRenderer::statusColor(dragonwatch::domain::AppState state) const 
 }
 
 void ScreenRenderer::render(const ScreenViewModel& vm) {
+  static int lastPrNumber = -1;
+  static std::string lastRepo;
+
   if (!initialized_) {
     return;
   }
 
-  display_.fillRect(layout_.header.x, layout_.header.y, layout_.header.w, layout_.header.h, 0x0000);
+  const bool headerChanged = (vm.prNumber != lastPrNumber) || (vm.repo != lastRepo);
+  if (headerChanged) {
+    display_.fillRect(layout_.header.x, layout_.header.y, layout_.header.w, layout_.header.h, 0x0000);
+  }
   display_.fillRect(layout_.dragonArea.x, layout_.dragonArea.y, layout_.dragonArea.w, layout_.dragonArea.h, 0x0000);
   display_.fillRect(layout_.commitArea.x, layout_.commitArea.y, layout_.commitArea.w, layout_.commitArea.h, 0x0000);
 
-  display_.setTextColor(0xFFFF, 0x0000);
-  char line1[64];
-  std::snprintf(line1, sizeof(line1), "Repo: %s", vm.repo.c_str());
-  display_.drawString(line1, 4, 4, 2);
+  if (headerChanged) {
+    display_.setTextColor(0xFFFF, 0x0000);
+    char line1[64];
+    std::snprintf(line1, sizeof(line1), "Repo: %s", vm.repo.c_str());
+    display_.drawString(line1, 4, 4, 2);
 
-  char line2[64];
-  std::snprintf(line2, sizeof(line2), "PR #%d - %s", vm.prNumber, vm.prAuthor.c_str());
-  display_.drawString(line2, 4, 22, 2);
+    char line2[64];
+    std::snprintf(line2, sizeof(line2), "PR #%d - %s", vm.prNumber, vm.prAuthor.c_str());
+    display_.drawString(line2, 4, 22, 2);
 
-  char line3[72];
-  std::snprintf(line3, sizeof(line3), "%s", vm.prTitle.c_str());
-  display_.drawString(line3, 4, 40, 2);
+    char line3[72];
+    std::snprintf(line3, sizeof(line3), "%s", vm.prTitle.c_str());
+    display_.drawString(line3, 4, 40, 2);
+
+    lastPrNumber = vm.prNumber;
+    lastRepo = vm.repo;
+  }
 
   const bool attacking = vm.appState == dragonwatch::domain::AppState::READY;
   const int pomberoBaseX = layout_.dragonArea.w / 2;
   const int pomberoBaseY = layout_.dragonArea.y + layout_.dragonArea.h / 2;
-  const int dodgeX = attacking ? static_cast<int>(std::sin(vm.phase * 7.0f) * 24.0f) : 0;
-  const int dodgeY = attacking ? static_cast<int>(std::cos(vm.phase * 5.4f) * 6.0f) : 0;
+  int pomberoX = pomberoBaseX;
+  int pomberoY = pomberoBaseY;
 
-  animator_.draw(display_, vm.dragonState, vm.frame, pomberoBaseX + dodgeX, pomberoBaseY + dodgeY);
+  if (attacking) {
+    const int runLeft = layout_.dragonArea.x + 36;
+    const int runRight = layout_.dragonArea.w - 44;
+    const float runT = wrap01(vm.phase * 0.40f);
+    pomberoX = runRight - static_cast<int>(runT * static_cast<float>(runRight - runLeft));
+    pomberoY = pomberoBaseY + static_cast<int>(std::sin(vm.phase * 8.0f) * 5.0f);
+  }
 
-  const std::size_t knivesCount = vm.commits.empty() ? 1 : vm.commits.size();
-  const int laneSpacing = 22;
-  const int centerLaneY = pomberoBaseY;
+  animator_.draw(display_, vm.dragonState, vm.frame, pomberoX, pomberoY);
+
+  const std::size_t knivesCountRaw = vm.openPrCount > 0 ? static_cast<std::size_t>(vm.openPrCount) : 1;
+  const std::size_t knivesCount = knivesCountRaw > 6 ? 6 : knivesCountRaw;
+  const int laneSpacing = knivesCount >= 5 ? 14 : (knivesCount >= 4 ? 18 : 24);
+  const int centerLaneY = pomberoY;
   const int attackStartX = layout_.commitArea.x + layout_.commitArea.w - 22;
-  const int attackEndX = pomberoBaseX - 12;
+  const int attackEndX = pomberoX - 8;
   const int attackDistance = attackStartX - attackEndX;
+  bool gotHit = false;
 
   for (std::size_t i = 0; i < knivesCount; ++i) {
-    const float t = wrap01(vm.phase * 0.26f + static_cast<float>(i) * 0.17f);
+    const float t = wrap01(vm.phase * 0.62f + static_cast<float>(i) * 0.18f);
     const int x = attackStartX - static_cast<int>(t * static_cast<float>(attackDistance));
-    const int yOffset = (static_cast<int>(i) - static_cast<int>(knivesCount) / 2) * laneSpacing;
-    const int yJitter = attacking ? static_cast<int>(std::sin(vm.phase * 9.0f + static_cast<float>(i)) * 4.0f) : 0;
+    const int yOffset = (static_cast<int>(i) - static_cast<int>(knivesCount - 1) / 2) * laneSpacing;
+    const int yJitter = attacking ? static_cast<int>(std::sin(vm.phase * 11.0f + static_cast<float>(i)) * 5.0f) : 0;
     const int y = centerLaneY + yOffset + yJitter;
-    const char* tag = vm.commits.empty() ? "PR" : vm.commits[i].shortSha.c_str();
-    drawKnife(display_, x, y, tag);
+    drawKnife(display_, x, y, "PR");
+
+    if (attacking && i == knivesCount - 1 && t > 0.88f && t < 0.98f) {
+      gotHit = true;
+    }
+  }
+
+  if (gotHit) {
+    drawCutMark(display_, pomberoX, pomberoY, vm.frame);
   }
 
   const uint16_t barColor = statusColor(vm.appState);

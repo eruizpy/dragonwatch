@@ -8,8 +8,13 @@ namespace dragonwatch::domain {
 
 std::vector<PullRequest> parsePullRequests(const std::string& repo, const std::string& payload) {
   std::vector<PullRequest> result;
+  JsonDocument filter;
+  filter[0]["number"] = true;
+  filter[0]["title"] = true;
+  filter[0]["user"]["login"] = true;
+
   JsonDocument doc;
-  const auto err = deserializeJson(doc, payload);
+  const auto err = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
   if (err || !doc.is<JsonArray>()) {
     return result;
   }
@@ -27,8 +32,11 @@ std::vector<PullRequest> parsePullRequests(const std::string& repo, const std::s
 
 std::vector<CommitInfo> parseCommits(const std::string& payload) {
   std::vector<CommitInfo> commits;
+  JsonDocument filter;
+  filter[0]["sha"] = true;
+
   JsonDocument doc;
-  const auto err = deserializeJson(doc, payload);
+  const auto err = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
   if (err || !doc.is<JsonArray>()) {
     return commits;
   }
