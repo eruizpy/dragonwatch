@@ -12,7 +12,6 @@
 #include "infrastructure/wifi_service.h"
 #include "platform/board_support.h"
 #include "platform/display_adapter.h"
-#include "platform/logger.h"
 #include "ui/screen_renderer.h"
 
 namespace {
@@ -43,7 +42,6 @@ Scheduler scheduler({AppConfig::refreshIntervalMs, AppConfig::rotateIntervalMs, 
 AppController app(wifi, github, renderer, scheduler, configuredRepos());
 
 void setup() {
-  Serial.begin(115200);
   platform::initBoard();
 
   display.begin();
@@ -52,7 +50,6 @@ void setup() {
   renderer.begin(BoardConfig::screenWidth, BoardConfig::screenHeight);
 
   app.begin();
-  platform::logInfo("DragonWatch started");
 }
 
 void loop() { app.tick(millis()); }
