@@ -55,14 +55,16 @@ void AppController::refreshData() {
     case infrastructure::FetchStatus::Ok:
       prs_ = result.pullRequests;
       if (prs_.empty()) {
+        activeCommits_.clear();
         appState_ = domain::transitionAppState(appState_, domain::DataEvent::FetchSuccessNoData);
       } else {
         appState_ = domain::transitionAppState(appState_, domain::DataEvent::FetchSuccessWithData);
+        if (activeIndex_ >= prs_.size()) {
+          activeIndex_ = 0;
+        }
+        refreshActiveCommits();
       }
       backoff_.onSuccess();
-      if (activeIndex_ >= prs_.size()) {
-        activeIndex_ = 0;
-      }
       break;
     case infrastructure::FetchStatus::NetworkError:
       appState_ = domain::transitionAppState(appState_, domain::DataEvent::FetchNetworkError);
@@ -85,6 +87,28 @@ void AppController::rotateData() {
   auto next = domain::selectNextPrIndex(prs_, activeIndex_);
   if (next.has_value()) {
     activeIndex_ = next.value();
+    refreshActiveCommits();
+  }
+}
+
+void AppController::refreshActiveCommits() {
+  if (prs_.empty() || activeIndex_ >= prs_.size()) {
+    activeCommits_.clear();
+    return;
+  }
+
+  const auto& pr = prs_[activeIndex_];
+  const auto commitsResult = github_.fetchPullRequestCommits(pr.repo, pr.number);
+  if (commitsResult.status == infrastructure::FetchStatus::Ok) {
+    activeCommits_ = commitsResult.commits;
+  } else if (commitsResult.status == infrastructure::FetchStatus::RateLimit ||
+             commitsResult.status == infrastructure::FetchStatus::ApiError ||
+             commitsResult.status == infrastructure::FetchStatus::NetworkError) {
+    appState_ = (commitsResult.status == infrastructure::FetchStatus::RateLimit)
+                    ? domain::transitionAppState(appState_, domain::DataEvent::FetchRateLimit)
+                    : (commitsResult.status == infrastructure::FetchStatus::ApiError)
+                          ? domain::transitionAppState(appState_, domain::DataEvent::FetchApiError)
+                          : domain::transitionAppState(appState_, domain::DataEvent::FetchNetworkError);
   }
 }
 
@@ -94,6 +118,7 @@ ui::ScreenViewModel AppController::buildViewModel() const {
   vm.dragonState = domain::resolveDragonState(appState_);
   vm.frame = frame_;
   vm.phase = phase_;
+  vm.openPrCount = static_cast<int>(prs_.size());
 
   if (!prs_.empty() && activeIndex_ < prs_.size()) {
     const auto& pr = prs_[activeIndex_];
@@ -101,7 +126,7 @@ ui::ScreenViewModel AppController::buildViewModel() const {
     vm.prNumber = pr.number;
     vm.prTitle = pr.title;
     vm.prAuthor = pr.author;
-    vm.commits = pr.commits;
+    vm.commits = &activeCommits_;
   }
 
   return vm;

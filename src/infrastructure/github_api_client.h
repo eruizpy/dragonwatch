@@ -21,10 +21,17 @@ struct FetchResult {
   int httpCode = 0;
 };
 
+struct CommitsFetchResult {
+  FetchStatus status = FetchStatus::ApiError;
+  std::vector<dragonwatch::domain::CommitInfo> commits;
+  int httpCode = 0;
+};
+
 class IGitHubApiClient {
  public:
   virtual ~IGitHubApiClient() = default;
   virtual FetchResult fetchOpenPullRequests(const std::vector<std::string>& repos) = 0;
+  virtual CommitsFetchResult fetchPullRequestCommits(const std::string& repo, int prNumber) = 0;
 };
 
 class GitHubApiClient final : public IGitHubApiClient {
@@ -32,6 +39,7 @@ class GitHubApiClient final : public IGitHubApiClient {
   explicit GitHubApiClient(const char* token);
 
   FetchResult fetchOpenPullRequests(const std::vector<std::string>& repos) override;
+  CommitsFetchResult fetchPullRequestCommits(const std::string& repo, int prNumber) override;
 
  private:
   FetchResult mapHttpError(int code) const;

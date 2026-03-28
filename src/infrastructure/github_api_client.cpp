@@ -18,11 +18,11 @@ FetchResult GitHubApiClient::mapHttpError(int code) const {
 }
 
 std::string GitHubApiClient::buildPullsUrl(const std::string& repo) const {
-  return "https://api.github.com/repos/" + repo + "/pulls?state=open&per_page=5";
+  return "https://api.github.com/repos/" + repo + "/pulls?state=open&per_page=3";
 }
 
 std::string GitHubApiClient::buildCommitsUrl(const std::string& repo, int prNumber) const {
-  return "https://api.github.com/repos/" + repo + "/pulls/" + std::to_string(prNumber) + "/commits?per_page=10";
+  return "https://api.github.com/repos/" + repo + "/pulls/" + std::to_string(prNumber) + "/commits?per_page=5";
 }
 
 FetchResult GitHubApiClient::fetchOpenPullRequests(const std::vector<std::string>& repos) {
@@ -58,31 +58,37 @@ FetchResult GitHubApiClient::fetchOpenPullRequests(const std::vector<std::string
 
     auto prs = parser_.parsePullRequests(repo, payload);
     for (auto& pr : prs) {
-      HTTPClient commitsHttp;
-      const auto commitsUrl = buildCommitsUrl(repo, pr.number);
-      if (!commitsHttp.begin(secureClient, commitsUrl.c_str())) {
-        return {FetchStatus::NetworkError, {}, -2};
-      }
-
-      commitsHttp.addHeader("Accept", "application/vnd.github+json");
-      commitsHttp.addHeader("User-Agent", "dragonwatch/0.1");
-      commitsHttp.addHeader("Authorization", std::string("Bearer ").append(token_).c_str());
-
-      const int commitsCode = commitsHttp.GET();
-      if (commitsCode != 200) {
-        commitsHttp.end();
-        return mapHttpError(commitsCode);
-      }
-
-      const std::string commitsPayload = commitsHttp.getString().c_str();
-      commitsHttp.end();
-
-      pr.commits = parser_.parseCommits(commitsPayload);
       result.pullRequests.push_back(pr);
     }
   }
 
   return result;
+}
+
+CommitsFetchResult GitHubApiClient::fetchPullRequestCommits(const std::string& repo, int prNumber) {
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+
+  HTTPClient commitsHttp;
+  const auto commitsUrl = buildCommitsUrl(repo, prNumber);
+  if (!commitsHttp.begin(secureClient, commitsUrl.c_str())) {
+    return {FetchStatus::NetworkError, {}, -2};
+  }
+
+  commitsHttp.addHeader("Accept", "application/vnd.github+json");
+  commitsHttp.addHeader("User-Agent", "dragonwatch/0.1");
+  commitsHttp.addHeader("Authorization", std::string("Bearer ").append(token_).c_str());
+
+  const int commitsCode = commitsHttp.GET();
+  if (commitsCode != 200) {
+    commitsHttp.end();
+    const auto mapped = mapHttpError(commitsCode);
+    return {mapped.status, {}, commitsCode};
+  }
+
+  const std::string commitsPayload = commitsHttp.getString().c_str();
+  commitsHttp.end();
+  return {FetchStatus::Ok, parser_.parseCommits(commitsPayload), commitsCode};
 }
 
 }  // namespace dragonwatch::infrastructure

@@ -29,6 +29,7 @@ class AppController {
 
  private:
   void refreshData();
+  void refreshActiveCommits();
   void rotateData();
   ui::ScreenViewModel buildViewModel() const;
 
@@ -40,6 +41,7 @@ class AppController {
 
   domain::AppState appState_;
   std::vector<domain::PullRequest> prs_;
+  std::vector<domain::CommitInfo> activeCommits_;
   std::size_t activeIndex_;
   domain::BackoffPolicy backoff_;
   uint32_t frame_;
